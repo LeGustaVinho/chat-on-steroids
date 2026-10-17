@@ -135,23 +135,23 @@
    * every ask, and only those are ours: the other computer's calls run there, not here. Measured
    * 2026-10-04: the call path, `invocation.server` and `app_name` all carry the name as typed.
    */
-  const PLAIN_APPS = ['Chat On Steroids Core', 'Chat On Steroids Desktop', 'Chat On Steroids Plugins'];
-  const LEGACY_APPS = ['TobisComputer'];
-  const SUFFIXED_APP = /^Chat On Steroids (Core|Desktop|Plugins) \([\p{L}\p{N} ._-]{1,32}\)$/u;
+  const PLAIN_APPS = ['Dev Workspace Core', 'Dev Workspace Desktop', 'Dev Workspace Plugins'];
+  const LEGACY_APPS = ['Chat On Steroids Core', 'Chat On Steroids Desktop', 'Chat On Steroids Plugins', 'TobisComputer'];
+  const SUFFIXED_APP = /^(?:Dev Workspace|Chat On Steroids) (Core|Desktop|Plugins) \([\p{L}\p{N} ._-]{1,32}\)$/u;
   let OUR_APPS = [...PLAIN_APPS, ...LEGACY_APPS];
-  /** Takes the names an ask carries: three "Chat On Steroids …" names, in core/desktop/plugins order. */
+  /** Takes the names an ask carries: three connector names, in core/desktop/plugins order. */
   function adoptAppNames(names) {
     if (!Array.isArray(names) || names.length !== 3) return;
     const words = ['Core', 'Desktop', 'Plugins'];
     for (let at = 0; at < 3; at++) {
       const name = names[at];
-      if (typeof name !== 'string' || (name !== PLAIN_APPS[at] && SUFFIXED_APP.exec(name)?.[1] !== words[at])) return;
+      if (typeof name !== 'string' || (name !== PLAIN_APPS[at] && name !== LEGACY_APPS[at] && SUFFIXED_APP.exec(name)?.[1] !== words[at])) return;
     }
     OUR_APPS = [...names, ...LEGACY_APPS];
   }
   /** The Plugins connector of any computer: it only sets that connector's larger action limits. */
   function pluginsConnectorName(name) {
-    return name === PLAIN_APPS[2] || SUFFIXED_APP.exec(typeof name === 'string' ? name : '')?.[1] === 'Plugins';
+    return name === PLAIN_APPS[2] || name === LEGACY_APPS[2] || SUFFIXED_APP.exec(typeof name === 'string' ? name : '')?.[1] === 'Plugins';
   }
 
   /**

@@ -56,7 +56,7 @@ async function mutate(work: ReturnType<typeof window.api.pluginsSnapshot>, notif
 }
 /** This computer's Plugins connector name, which carries its suffix when one is set. */
 function pluginsConnectorName(): string {
-  return appState?.status.surfaces.find(item => item.id === 'plugins')?.connectorName ?? 'Chat On Steroids Plugins';
+  return appState?.status.surfaces.find(item => item.id === 'plugins')?.connectorName ?? 'Dev Workspace Plugins';
 }
 export async function refreshPlugins(): Promise<void> { await mutate(window.api.pluginsSnapshot(), false); }
 export function applyPluginsState(next: AppState): void {
@@ -108,8 +108,8 @@ function showConnection(): void {
     else key = field(body, () => t("Tunnel API key"), '', true, () => t("Use a restricted key with Tunnels: Read and Tunnels: Use. It is stored securely and shared with Core and Desktop."));
   }
   // Values needed for ChatGPT setup stay copyable; tool lists belong to each plugin.
-  copy(t("Name in ChatGPT"), surface?.connectorName ?? 'Chat On Steroids Plugins');
-  copy(t("Description"), surface?.description ?? 'Tools from your enabled Chat On Steroids plugins.');
+  copy(t("Name in ChatGPT"), surface?.connectorName ?? 'Dev Workspace Plugins');
+  copy(t("Description"), surface?.description ?? 'Tools from your enabled Dev Workspace plugins.');
   const url = surface?.publicUrl ?? (config.tunnel.kind === 'manual' ? surface?.localUrl : null);
   if (url) copy(t("MCP server URL"), url);
   body.append(el('p', 'hint', () => config.tunnel.kind === 'openai'

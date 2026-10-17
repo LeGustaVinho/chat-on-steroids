@@ -5384,6 +5384,7 @@ let bridgeRecovering = false;
 let bridgeError: string | null = null;
 const bridgeDrains = new Set<Promise<void>>();
 let dropSpawnRequestListener: (() => void) | null = null;
+let pendingSpawnTimers: Array<ReturnType<typeof setTimeout>> = [];
 let dropReviveRequestListener: (() => void) | null = null;
 
 function runStaleSwarmSweep(): Promise<boolean> {
@@ -5596,7 +5597,22 @@ async function startBridgeOnce(epoch: number, prepared?: PreparedBridge): Promis
   retireInactiveWorkerRecovery();
   dropSpawnRequestListener?.();
   dropSpawnRequestListener = onSpawnRequest((workers) => {
-    for (const worker of workers) queueWorkerBootstrap(worker.id, worker.task, worker.model, worker.reasoningEffort, worker.runId);
+    for (const timer of pendingSpawnTimers) clearTimeout(timer);
+    pendingSpawnTimers = [];
+    const stealth = getConfig().ui.stealthMode !== false;
+    workers.forEach((worker, index) => {
+      if (index === 0 || !stealth) {
+        queueWorkerBootstrap(worker.id, worker.task, worker.model, worker.reasoningEffort, worker.runId);
+      } else {
+        const delayMs = index * (5000 + Math.floor(Math.random() * 4000));
+        const timer = setTimeout(() => {
+          if (swarmRunning(worker.runId)) {
+            queueWorkerBootstrap(worker.id, worker.task, worker.model, worker.reasoningEffort, worker.runId);
+          }
+        }, delayMs);
+        pendingSpawnTimers.push(timer);
+      }
+    });
   });
   // The same replay contract for waking a worker that already has a chat. A run restored
   // from disk can hold a worker left in `waking` by a crash mid-revival; registering here
@@ -5616,6 +5632,8 @@ async function startBridgeOnce(epoch: number, prepared?: PreparedBridge): Promis
   // stop notices once per restart the app had ever done.
   dropSwarmEndListener?.();
   dropSwarmEndListener = onSwarmEnd((reason, _retired, runId) => {
+    for (const timer of pendingSpawnTimers) clearTimeout(timer);
+    pendingSpawnTimers = [];
     // Cancelling the queue stops the worker chats that have not opened yet. The ones
     // already open are not typed into: driving somebody's conversation to tell it to
     // stop is a second control channel, and the app has no business writing into a chat
@@ -5752,6 +5770,8 @@ export async function stopBridge(): Promise<void> {
     dropSwarmChangeListener = null;
     dropSpawnRequestListener?.();
     dropSpawnRequestListener = null;
+    for (const timer of pendingSpawnTimers) clearTimeout(timer);
+    pendingSpawnTimers = [];
     dropReviveRequestListener?.();
     dropReviveRequestListener = null;
     if (staleSwarmTimer) clearInterval(staleSwarmTimer);
@@ -9362,7 +9382,14 @@ const turnRotationDeps: RotationDeps = {
     return start.time;
   },
   file: (sessionId, turnId) => fileRotationInput(sessionId, turnId),
-  log: message => logInfo(message)
+  log: message => logInfo(message),
+  jitterMs: (turnId) => {
+    if (getConfig().ui.stealthMode === false) return 0;
+    let hash = 0;
+    for (let i = 0; i < turnId.length; i++) hash = ((hash << 5) - hash + turnId.charCodeAt(i)) | 0;
+    // Jitter between -3 minutes and +3 minutes (-180s to +180s)
+    return ((Math.abs(hash) % 361) - 180) * 1000;
+  }
 };
 
 function noteCallAttribution(

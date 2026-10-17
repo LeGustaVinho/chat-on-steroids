@@ -380,7 +380,9 @@ const configSchema = z.object({
     // Dark is the design the app is drawn for, and a config written before the theme
     // existed has no stored answer to override — so it is the default rather than the
     // fallback. An explicit `light` is somebody's own choice and is never touched.
-    theme: z.enum(['light', 'dark']).optional().default('dark')
+    theme: z.enum(['light', 'dark']).optional().default('dark'),
+    stealthMode: z.boolean().optional().default(true),
+    stealthProfile: z.enum(['cautious', 'natural', 'off']).optional().default('natural').catch('natural')
   }),
   // Whole sections are optional, so a config written by an older build keeps working
   // and simply gains the new features switched off. The default object is spelled out
@@ -592,7 +594,7 @@ export function defaultConfig(platform: NodeJS.Platform = process.platform, rele
     // Fresh installs refresh changed connector tools on their own: a permission chosen in Setup
     // changes the tool list, and nothing else tells a new user to refresh the plugin in ChatGPT.
     // Older configs keep the schema default (off).
-    ui: { minimizeToTray: true, autoConnect: false, startAtLogin: false, keepAwake: true, keepScreenAwake: false, cosBrowserMinimize: 'taskbar', turnNotifications: true, rotateTurnMinutes: 30, localAppUsage: true, privacyScreenshots: false, theme: 'dark', autoRefreshPlugins: true, autoSelectSkills: false, backgroundChats: true, backgroundPlacement: 'window', followUp: 'steer', enterSends: true, browserBridgePort: 'auto', autoContinue: true, followOutput: true, mentionCore: true, mentionPlugins: false,
+    ui: { minimizeToTray: true, autoConnect: false, startAtLogin: false, keepAwake: true, keepScreenAwake: false, cosBrowserMinimize: 'taskbar', turnNotifications: true, rotateTurnMinutes: 30, localAppUsage: true, privacyScreenshots: false, theme: 'dark', autoRefreshPlugins: true, autoSelectSkills: false, backgroundChats: true, backgroundPlacement: 'window', followUp: 'steer', enterSends: true, browserBridgePort: 'auto', autoContinue: true, followOutput: true, mentionCore: true, mentionPlugins: false, stealthMode: true, stealthProfile: 'natural',
       // The built-in browser is opt-in: Chrome with the companion stays the default for new and
       // existing installs alike, and the built-in one runs only once someone chooses it.
       chatBrowser: 'chrome' },

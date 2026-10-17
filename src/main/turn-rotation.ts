@@ -22,6 +22,7 @@ export interface RotationDeps {
   /** Files the automatic continue into exactly this running turn; null when the outbox refused. */
   file(sessionId: string, turnId: string): Promise<unknown | null>;
   log(message: string): void;
+  jitterMs?(turnId: string): number;
 }
 
 const REFUSED_RETRY_MS = 60_000;
@@ -44,7 +45,9 @@ export async function considerTurnRotation(conversationId: string, sessionId: st
   inFlight.add(conversationId);
   try {
     const startedAt = await deps.turnStartedAt(sessionId, turnId);
-    if (startedAt === null || now - startedAt < minutes * 60_000) return false;
+    const jitter = deps.jitterMs ? deps.jitterMs(turnId) : 0;
+    const thresholdMs = Math.max(5 * 60_000, minutes * 60_000 + jitter);
+    if (startedAt === null || now - startedAt < thresholdMs) return false;
     const row = await deps.file(sessionId, turnId);
     const filings = (last?.turnId === turnId ? last.filings : 0) + (row !== null ? 1 : 0);
     attempts.set(conversationId, { turnId, at: now, filed: row !== null, filings });

@@ -2364,6 +2364,7 @@ var CLF_DOM = (() => {
       // normalisation the send receipt uses, so both agree on "the same message".
       const sameAsValue = String(existing).replace(/\s+/g, '') === String(value || '').replace(/\s+/g, '');
       if (existing !== '' && mode === false && !sameAsValue) return reject('existing_draft');
+      simulatePointerFocus(box);
       box.focus();
       const selection = document.getSelection();
       if (!selection) return reject('selection_missing');
@@ -2475,6 +2476,62 @@ var CLF_DOM = (() => {
     } catch {
       return null;
     }
+  }
+
+  /** Gaussian random distribution using Box-Muller transform bounded by min and max. */
+  function randomGaussian(mean, stdDev, min, max) {
+    let u = 1 - Math.random();
+    let v = Math.random();
+    let z = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+    let val = mean + z * stdDev;
+    return Math.max(min, Math.min(max, val));
+  }
+
+  /** Dispatches realistic pointer/mouse events over an element prior to focus. */
+  function simulatePointerFocus(element) {
+    if (!element) return;
+    try {
+      const rect = typeof element.getBoundingClientRect === 'function' ? element.getBoundingClientRect() : { left: 0, top: 0, width: 32, height: 32 };
+      const width = rect.width || 32, height = rect.height || 32;
+      const x = (rect.left || 0) + Math.max(1, Math.min(width - 1, width * (0.2 + Math.random() * 0.5)));
+      const y = (rect.top || 0) + Math.max(1, Math.min(height - 1, height * (0.3 + Math.random() * 0.4)));
+      const view = element.ownerDocument?.defaultView || window;
+      const eventInit = { bubbles: true, cancelable: true, clientX: x, clientY: y, view };
+      const PEvent = typeof view.PointerEvent === 'function' ? view.PointerEvent : view.MouseEvent || MouseEvent;
+      const MEvent = typeof view.MouseEvent === 'function' ? view.MouseEvent : MouseEvent;
+      element.dispatchEvent(new PEvent('pointerover', eventInit));
+      element.dispatchEvent(new MEvent('mouseover', eventInit));
+      element.dispatchEvent(new PEvent('pointerdown', eventInit));
+      element.dispatchEvent(new MEvent('mousedown', eventInit));
+      element.dispatchEvent(new PEvent('pointerup', eventInit));
+      element.dispatchEvent(new MEvent('mouseup', eventInit));
+    } catch {}
+  }
+
+  /**
+   * Dispatches realistic pointer/mouse events over the control prior to clicking.
+   */
+  function dispatchHumanClick(control) {
+    if (!control) return;
+    try {
+      const rect = typeof control.getBoundingClientRect === 'function' ? control.getBoundingClientRect() : { left: 0, top: 0, width: 32, height: 32 };
+      const width = rect.width || 32, height = rect.height || 32;
+      const x = (rect.left || 0) + Math.max(1, Math.min(width - 1, width * (0.25 + Math.random() * 0.5)));
+      const y = (rect.top || 0) + Math.max(1, Math.min(height - 1, height * (0.25 + Math.random() * 0.5)));
+      const view = control.ownerDocument?.defaultView || window;
+      const eventInit = { bubbles: true, cancelable: true, clientX: x, clientY: y, view };
+      const PEvent = typeof view.PointerEvent === 'function' ? view.PointerEvent : view.MouseEvent || MouseEvent;
+      const MEvent = typeof view.MouseEvent === 'function' ? view.MouseEvent : MouseEvent;
+
+      control.dispatchEvent(new PEvent('pointerover', eventInit));
+      control.dispatchEvent(new MEvent('mouseover', eventInit));
+      control.dispatchEvent(new PEvent('pointerenter', eventInit));
+      control.dispatchEvent(new PEvent('pointerdown', eventInit));
+      control.dispatchEvent(new MEvent('mousedown', eventInit));
+      control.dispatchEvent(new PEvent('pointerup', eventInit));
+      control.dispatchEvent(new MEvent('mouseup', eventInit));
+    } catch {}
+    control.click();
   }
 
   /** Runs `run` on a later task. A message is not throttled like a timer in a background tab. */
@@ -2672,7 +2729,7 @@ var CLF_DOM = (() => {
                 timer = setTimeout(() => { check(); finish(false); }, receiptTimeoutMs);
             }
             clickedAt = Date.now();
-            try { control.click(); } catch { return finish(false); }
+            try { dispatchHumanClick(control); } catch { return finish(false); }
             check(); // Synchronous navigation/cancellation during click also re-proves ownership.
           };
           if (!beforeSend) return click();
@@ -2750,14 +2807,15 @@ var CLF_DOM = (() => {
    * calls run there. Null until the app has said, which keeps the plain names. Every ask to the
    * page-world helper carries them, so it never judges traffic by names it was not told.
    */
-  const PLAIN_CONNECTORS = ['Chat On Steroids Core', 'Chat On Steroids Desktop', 'Chat On Steroids Plugins'];
-  const SUFFIXED_CONNECTOR = /^Chat On Steroids (Core|Desktop|Plugins) \([\p{L}\p{N} ._-]{1,32}\)$/u;
+  const PLAIN_CONNECTORS = ['Dev Workspace Core', 'Dev Workspace Desktop', 'Dev Workspace Plugins'];
+  const LEGACY_CONNECTORS = ['Chat On Steroids Core', 'Chat On Steroids Desktop', 'Chat On Steroids Plugins'];
+  const SUFFIXED_CONNECTOR = /^(?:Dev Workspace|Chat On Steroids) (Core|Desktop|Plugins) \([\p{L}\p{N} ._-]{1,32}\)$/u;
   let ownConnectors = null;
   function setConnectorNames(names) {
     if (!names || typeof names !== 'object') return false;
     const list = [names.core, names.desktop, names.plugins];
     const words = ['Core', 'Desktop', 'Plugins'];
-    if (!list.every((name, at) => typeof name === 'string' && (name === PLAIN_CONNECTORS[at] || SUFFIXED_CONNECTOR.exec(name)?.[1] === words[at]))) return false;
+    if (!list.every((name, at) => typeof name === 'string' && (name === PLAIN_CONNECTORS[at] || name === LEGACY_CONNECTORS[at] || SUFFIXED_CONNECTOR.exec(name)?.[1] === words[at]))) return false;
     ownConnectors = list;
     return true;
   }

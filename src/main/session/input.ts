@@ -743,7 +743,9 @@ export function fileRotationInput(sessionId: string, turnId: string): Promise<In
     const policy = await sessionInputPolicy(sessionId);
     if (policy.directTurn?.id !== turnId) return null;
     const now = Date.now();
-    const entry: InputEntry = { id: randomUUID(), sessionId, text: rotationMessage(), mode: 'auto', dueAt: now, model: null, reasoningEffort: null,
+    const stealth = getConfig().ui.stealthMode !== false;
+    const jitterDelay = stealth ? Math.floor(Math.random() * 2500) : 0;
+    const entry: InputEntry = { id: randomUUID(), sessionId, text: rotationMessage(), mode: 'auto', dueAt: now + jitterDelay, model: null, reasoningEffort: null,
       authoredSource: 'none', purpose: 'rotation', directTurn: policy.directTurn, transportIntent: 'browser',
       queuedTurn: { conversationId: session.conversationId, turnId }, state: 'queued', owner: null, createdAt: now,
       conversationId: session.conversationId };
@@ -1396,8 +1398,10 @@ export function fileRecoveryInput(sessionId: string, conversationId: string, tur
     if (current.some(row => row.sessionId === sessionId && row.recovery?.ended && row.silenceBoundary?.turnId === turnId &&
         row.silenceBoundary.workSeq === workSequence(work))) return refused('pages refused this restart and nothing has changed since');
     const now = Date.now();
+    const stealth = getConfig().ui.stealthMode !== false;
+    const thinkingDelay = stealth ? (2500 + Math.floor(Math.random() * 3500)) : 0;
     const row: InputEntry = { id: randomUUID(), sessionId, conversationId, owner: null, state: 'queued',
-      mode: 'after-turn', dueAt: now, createdAt: now, model: null, reasoningEffort: null,
+      mode: 'after-turn', dueAt: now + thinkingDelay, createdAt: now, model: null, reasoningEffort: null,
       text: recoveryMessage({ playful: getConfig().ui.playfulContinue === true }),
       recovery: { questionId: question.messageId, episode, pro, busyUntil, phase: 'ready' },
       silenceBoundary: { turnId, conversationId, workSeq: workSequence(work), acceptedAt: now } };
@@ -2057,7 +2061,10 @@ export async function requestBrowserDecision(text: string, signal: AbortSignal, 
           row.state === 'cancelled' && row.cancelledByUser === true && !row.conversationId && row.deliveredAt === undefined)) {
         throw new Error('goal_browser_send_unconfirmed');
       }
-      const entry = entrySchema.parse({ id, sessionId: null, text, mode: 'after-turn', dueAt: Date.now(),
+      const decisionNow = Date.now();
+      const stealth = getConfig().ui.stealthMode !== false;
+      const decisionDelay = stealth ? (1500 + Math.floor(Math.random() * 2000)) : 0;
+      const entry = entrySchema.parse({ id, sessionId: null, text, mode: 'after-turn', dueAt: decisionNow + decisionDelay,
         // null means ChatGPT's current selection; only an omitted value gets the historical default.
         model: options.model === undefined ? DEFAULT_HELPER_CHAT_MODEL : options.model,
         reasoningEffort: options.reasoningEffort === undefined ? 'high' : options.reasoningEffort,

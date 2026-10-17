@@ -951,8 +951,7 @@
     coreCandidates = Array.isArray(event.data.candidates)
       ? event.data.candidates.slice(0, 16).filter(entry => typeof entry?.name === 'string' && entry.name.length <= 80)
         .map(entry => ({ name: entry.name, path: valid(entry.path) }))
-      // An observer from before suffixes names only the plain Core.
-      : event.data.name === 'Chat On Steroids Core' ? [{ name: event.data.name, path: valid(event.data.path) }] : [];
+      : (event.data.name === 'Dev Workspace Core' || event.data.name === 'Chat On Steroids Core') ? [{ name: event.data.name, path: valid(event.data.path) }] : [];
     corePluginList = event.data.pluginList === true;
     reportCorePlugin();
   });
@@ -1466,7 +1465,7 @@
     const takeUtf8 = (value, budget) => {
       if (typeof value !== 'string') return value;
       if (utf8Bytes(value) <= budget) return value;
-      const marker = '\n\n[Chat On Steroids: browser observation truncated to fit transport.]';
+      const marker = '\n\n[Dev Workspace: browser observation truncated to fit transport.]';
       const markerBytes = utf8Bytes(marker);
       let low = 0;
       let high = value.length;

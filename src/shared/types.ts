@@ -217,6 +217,10 @@ export interface UiPrefs {
   cosBrowserMinimize?: 'taskbar' | 'tray';
   /** Explicit choice, never inherited from the OS: the window looks how you left it. */
   theme: 'light' | 'dark';
+  /** Human-like timing, randomized delays and input cadence to avoid bot detection. Missing means true. */
+  stealthMode?: boolean;
+  /** Stealth behavior profile: natural (balanced), cautious (longer pauses) or off. */
+  stealthProfile?: 'cautious' | 'natural' | 'off';
   appearance?: import('./appearance.js').AppearanceSettings;
 }
 
