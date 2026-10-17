@@ -598,6 +598,11 @@ export interface SessionOrigin {
   agentId: string | null;
   /** The worker's task, verbatim from `agents action=spawn`. Empty for a resume. */
   task: string;
+  /**
+   * Branch in new chat (#482): the ChatGPT chat and exact native reply this chat was branched
+   * from, with `fromSessionId` naming the source session. Presentation only; nothing carries over.
+   */
+  branchOf?: { conversationId: string; messageId: string };
 }
 
 /** Historical presentation projected from an accepted broker snapshot; grants no worker authority. */
@@ -1300,3 +1305,10 @@ export interface SessionSearchReply {
   /** More chats match than `results` holds. */
   limited?: true;
 }
+
+/**
+ * Stored title of the chat that collects tool calls no chat could be named for. It doubles as the
+ * marker the app finds that chat by (with no conversation), so it stays English on disk and the
+ * window shows it in the interface language.
+ */
+export const UNATTRIBUTED_SESSION_TITLE = 'Unattributed activity';

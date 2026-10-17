@@ -452,7 +452,10 @@ internal length and closing boundary; authored whitespace after the frame remain
 ### Text Skills
 
 `main/skills.ts` owns the empty-by-default `<userData>/skills/<id>/SKILL.md` library,
-bounded UTF-8 import/read and metadata catalog. Valid YAML name/description fields use the
+bounded to 128 valid packages with fail-closed overflow, UTF-8 import/read and metadata catalog.
+Its Core connector projection omits the redundant per-skill path, trims descriptions to 160
+characters and caps catalog rows at 7,000 characters, ending with the omitted count and `/skills`
+listing hint instead of expanding connector instructions without bound. Valid YAML name/description fields use the
 shared bounded parser before publication, including folded/literal multiline descriptions;
 catalog fields are normalized to one bounded line without rewriting the source body. Legacy
 plain Markdown or invalid/incomplete headers keep the existing heading/prose fallback.
@@ -924,6 +927,34 @@ Choosing an item gives focus back to the row's button before the action runs, so
 repaint keeps it there unless the user moved focus meanwhile; an action that moves focus
 (renaming, a new chat's field) still does.
 
+The Inbox layout (`ui.appearance.sidebarLayout: 'inbox'`) is the same sidebar drawn as one list,
+not a second one: its cards and settled lines are `sessionRow`s, and it shares the tree's worker
+grouping (`workerChildren`, `workerGroup`, `workerHistory`: the same arrow, `expandedWorkers` and
+"Sub-agent history"), its "Unattributed activity" disclosure (`unattributedActivity`, with the rows'
+Allow/Block unattributed calls), project menu (`projectMenu`, owner `project:<id>`), history reads and focus
+keeping (`sidebarFocus`). A card's meta line counts its workers in one line ("1 needs attention ·
+2 working · 1 sleeping"), read from the badges the workers' own rows draw (`workerState`); a
+running worker, or one that needs attention, keeps its parent out of Settled and orders it by that activity.
+Cards rank by what the chat needs (`chatAttention`, `inboxRank`), from main-owned state only, never
+ChatGPT's text: Needs approval (`approval`), Recovery stopped (`recoveryStopped`), Blocked, Failed
+(no open turn and last outcome `failed`/`stalled`), then Working, then New response (unseen, the
+row badge's own words), then the rest; recency orders within a rank, and a worker lends its parent
+its own rank. Pinned chats still lead, ranked the same way among themselves. Each attention state is
+one icon and label on the card's meta line, in `--red`. A chat waiting on approval, recovery-stopped
+or blocked never settles; a failed one ranks with them while it is recent, then settles after the
+same 24 hours as any quiet chat, ranked by recency like the rest, its settled line still saying
+Failed. The tree
+shows approval and recovery-stopped as the row's status dot, like `blocked`.
+The project filter is one button opening the shared searchable popup (`renderer/search-popup.ts`,
+also the file panel's branch picker): All and each project in tree order, with a hint while its
+ChatGPT Project is being created or unavailable. A chosen project shows its ⋯ menu beside the
+filter (Remove returns to All), reads its own history as expanding it does (`projectViewed`), and
+holds as many chats as its tree section, cards and Settled counted together in drawn order, then
+"Show more" after both groups, outside Settled (whose count is the lines drawn); the selected chat
+and every chat that needs the person stay visible beyond the page. While that project's own history
+is unread its empty state says "Loading chats…", and after a failed read it offers Retry.
+The filter is window-local, like disclosure state.
+
 Removing a project marks the catalog row `ungrouped`. Existing and unloaded sessions, pending
 inputs and workers keep their durable project association; their chats return to the ordinary
 sidebar list. Adding that same folder again restores grouping. It does not delete files,
@@ -1047,6 +1078,37 @@ row says so ("Creating this project in ChatGPT…", or the unavailable line poin
 deleted Project's page redirects to ChatGPT's home and drops the marker: the worker reports
 `gone` for the tab it opened for that Project, the link becomes `failed`, and nothing is sent.
 An opening remembers its Project, so a retry's new Project gets its own tab.
+
+Branch in new chat (#482): the answer action under a completed reply with native ids (not in worker
+or helper chats) starts a new chat whose first message carries `branch { sessionId, conversationId,
+messageId }`. Main admits it only as an opening (or as a retry in its own still-unbound reserved
+chat, at the same reply), from a chat that still shows that conversation and has no turn running; the reserved session's
+origin is `desktop` with `fromSessionId` and `branchOf { conversationId, messageId }`, and nothing
+else carries over (attribution, workers, inputs, Goal/Loop). `pendingBrowserInputs` hands the
+browser `branch` instead of a linked Project, and `/input/claim` does not require a Project page for it. The worker opens `/c/<source>?cos-input=…#cos-input=…`
+(never borrowing a tab) and keeps matching its elected tab once it shows ChatGPT's local draft
+(`/c/local-chatgpt:…`). Before any claim, the page on the marked source chat finds the reply's
+turn by fiber `endMessageId`, opens the reply's ellipsis menu, the Branch entry (branch icon) and
+its submenu, and chooses ChatGPT's own "new chat" entry by handler: `fiber.js` answers
+`clf-branch-ask` by marking the single submenu entry whose `onSelect` source does not mention work
+mode (`data-clf-branch-new-chat=<nonce>`). No label is read. ChatGPT then moves the tab to its local
+draft holding the history up to that reply; the page puts the message's `cos-input` marker back on
+that URL (`history.replaceState`), so the worker's marker checks (claim, protection, tab group) hold,
+and a page that forgot its draft (reload) resumes on one whose last reply is exactly that reply. The
+ordinary new-chat delivery claims, types and sends there, and the first send gives the branch its
+real id. At that first bind, before the question is recorded, `seedBranchHistory` writes the source
+chat's recorded messages and steps up to the reply into the branch under the same native ids (long
+texts with their overflow), so the page's later report of the copied history revises them in place
+and the question follows them. A missing reply or an absent/ambiguous entry
+is reported as `/input/claim { branchFailed: 'branch_message_missing' | 'branch_unavailable' }`
+for that exact source chat, which fails the unclaimed opening with a translated reason
+(`BRANCH_ERRORS`); nothing was typed. The branch chat records the copied history itself, as ChatGPT
+shows it, and links back through `sessions:locate-message { id, messageId }` → the reply's
+`SessionSearchLocation`. The notice's Cancel opens the source chat at that reply; a source deleted
+while the branch is a draft turns the draft into a plain new chat. Final answers recorded outside any
+turn (copied branch history, an adopted chat's history, replies to messages typed in the tab) carry
+the same actions as a turn's answer (`messageAnswerAnchors`); `sessions:exportMarkdown` names them
+by `messageId` instead of `turnId`, and refuses a turn's own answer named that way.
 
 ## 10. Files, terminal, patches and images
 
@@ -1460,7 +1522,8 @@ page reports it on every `/activity` poll as optional `approval=1|0` (older exte
 ten-minute stall clock all wait. The chat gets one `approval-wait:` progress row (texts in
 `src/shared/approval-wait.ts`, translated by the renderer, with Open in browser) and, after 30 s, one
 stop-notice-style desktop notice whose click opens the chat in the app. The app never answers the
-card on its own.
+card on its own. The session list carries every waiting chat as `approval`; a catalog-only
+`session:changed` fires when a wait starts, ends, or goes stale with no poll left to say so.
 
 Since 2.1.38 the person can answer it in the app. With `approval=1` the page also sends
 `approvalCard` (JSON `{ id, lines, allow }`: an id per card element, kept in a `WeakMap` while it
@@ -2274,7 +2337,11 @@ precedes that navigation on a temporary `about:blank` page. Creation and attachm
 receipts: `created: true` survives an `attachmentError`, retaining the same tab handle for inspection
 or deliberate attachment. A known attachment limit fails before creating a tab. The existing
 bounded readiness wait observes document commit, not completion of every subresource, and releases
-its listeners on closure. It never opens a replacement. Tab lists include pending URL/status and
+its listeners on closure. It never opens a replacement. Chrome answers no `Page.enable` on a tab it
+discarded (`status: unloaded` or `discarded: true`, #1568), so an explicit attach first reloads that
+same tab: only with control permission and a live permission check, waiting on tab events within the
+command's deadline (at most 10 s). A loaded or frozen tab is never reloaded; a refused, stalled or
+closed reload attaches nothing and keeps no custody. Tab lists include pending URL/status and
 separate snapshot/input access hints. These are observations; live guards still own each operation.
 The root debugger session enables Chromium focus emulation while attached, so hidden pages
 continue rendering and accepting input without changing the selected tab or OS foreground.
@@ -2779,7 +2846,11 @@ attempt count and next deadline are stored with the exact Goal reply or queued i
 restart cannot reset the limit. After the third uncollected reload, recovery stops and the composer
 shows a persistent stop status while the original obligation remains saved. A queue item can still
 be sent manually; reactivating the same Goal reply does not refund its attempts. The twelve-hour source
-lifetime remains a separate retirement bound. Native-busy polls do not postpone that schedule. A silence episode retiring
+lifetime remains a separate retirement bound. The session list carries stopped chats as
+`recoveryStopped` (the same `pickup-stopped` predicate); a queued input's stop pushes
+`session:changed` with its outbox write, a Goal reply's stop pushes from the pickup sweep as soon as
+it is recorded (before, and whether or not, its last reload is queued), and a
+user acting on it (sending or cancelling the input; a newer question over a Goal reply) clears it. Native-busy polls do not postpone that schedule. A silence episode retiring
 cannot delete a new pickup repair belonging to its durable ticket.
 
 Continue text, source question/work, busy deadline and exclusive send custody live in the
@@ -3435,6 +3506,10 @@ An exact caller without its own family receives a successful empty `agents statu
 of other active primes. A permitted unresolved request can likewise inspect its own state and
 start its own family. Missing both exact proof and permitted request identity refuses only that
 operation. Sleeping-worker measurement remains scoped to the caller's actual history.
+A worker whose chat shows ChatGPT's tool approval card (`approvalCardWaiting`) is marked in the
+status table ("needs the user to answer a tool approval in its chat"), named in one sentence below
+it, and carries `needs_user_approval: true` in the structured agents list, so a prime tells the
+person instead of reading the wait as a stuck runtime.
 
 Spawn validates both per-family and optional global capacity, objective/context, account-observed model/effort, workspace and role,
 then durably reserves the worker before handing out browser work. Model checks precede every
@@ -3951,6 +4026,15 @@ completion is acknowledged locally without writing session metadata. The receipt
 the current selection/load generation has successfully rendered that conversation at the live tail;
 failed or stale selection loads leave it unseen. A first-run baseline prevents historical completions
 from appearing unread after an update, and the stored receipts stay bounded.
+`sessions:list` (`readSessionList`, `SessionList`) carries per-chat states only the main process
+holds, as ChatGPT conversation ids, each keyed like `blocked`: `approval` (`approvalWaitingChats()`,
+the recovery hold's own 75 s freshness rule) and `recoveryStopped` (`recoveryStoppedChats()` in
+bridge.ts: exactly the chats whose `sessionRecoveryCountdowns` reads `pickup-stopped`, asked only of
+sessions with a durable stop mark, so a list with none costs nothing). The pageless verdict
+(`pagelessChats`) is deliberately not in `recoveryStopped`: it is in memory, keeps no obligation and
+lifts when the page polls. "Last turn failed and nothing followed" needs no field:
+`!activeTurnId && lastTurnOutcome` is `failed` or `stalled` (`interrupted` is usually followed by a
+fresh turn: rotation, automatic Continue, a replacing message).
 The chat keeps the current input queue/plan visible alongside a
 paged transcript. Main owns durable mutation acknowledgements; renderer optimism is not a
 receipt. Native edit context menus respect the focused editable control and selection.
@@ -4140,9 +4224,11 @@ catalogs (`i18n.ts`, `locales/{es,zh-CN,zh-TW,ja,ko,tr,fr,pt-PT,pt-BR,de,ru,vi}.
 `cos.ui.language`. The main process has no catalogs: the renderer translates the allowlisted
 stopped-chat notice texts (`shared/stop-notice.ts`) and publishes them over `ui:stopNoticeTexts`
 at startup and on each language change; unknown keys are refused and untranslated notices stay English.
-The tray menu, its tooltip, the Session finish notice with its buttons and tunnel-loss notices work
-the same way: the allowlisted `shared/main-texts.ts` over `ui:mainTexts`, kept by
-`main/main-texts.ts`, which repaints the tray.
+The tray menu, its tooltip, the Session finish notice with its buttons, tunnel-loss notices and the
+main process's native dialogs (file dialog titles and filter names, the worker checkout removal
+confirmation) work the same way: the allowlisted `shared/main-texts.ts` over `ui:mainTexts`, kept by
+`main/main-texts.ts`, which repaints the tray. The channel accepts at most `MAIN_TEXTS.length` keys;
+counts and paths are filled into `{0}` after translation, with a function replacement.
 The renderer also reports the language over `ui:language`; the main process keeps it as `ui.language`
 and hands it to the extension in the `/status` reply (`language`). The extension stores it as
 `appLanguage` and `i18n.js` then reads that catalog itself (content scripts get it from the service
@@ -4156,7 +4242,14 @@ accessible labels; Appearance retains the named language dropdown. Both controls
 same persisted preference. `translate="no"` protects text and attributes, including native
 language names. Japanese has its own system-font fallbacks and CJK wrapping. Changing language
 repaints owned labels while retaining drafts/selections; never translate authored messages,
-provider text or file paths. Catalog checks cover all source keys and numbered placeholders;
+provider text or file paths. Counts go through `tn(one, other, count, args?)` (renderer) and
+`tn(key, count, one, other, substitutions?)` (extension), which pick the form with `Intl.PluralRules`
+for the selected language: a catalog keeps the plural ("other") text under its key and each further
+form the language has under `"<other>|<form>"` (renderer) or `<key>__<form>` (extension), e.g. Russian
+one/few/many, German one, Japanese none. Tests require exactly those forms per language. A text with
+several counts is split into one counted part per number; main-process texts cannot pick a form, so
+their counts stay in a count-free label ("… ({0}):").
+Catalog checks cover all source keys and numbered placeholders;
 `dom.run()` translates catalogued IPC errors before displaying a toast; unknown error strings
 and successful payloads stay literal.
 Settings search folds both query and labels with the selected locale, including Turkish İ/ı.
@@ -4186,8 +4279,11 @@ Appearance uses `ui.appearance` in the existing config, with separate Light/Dark
 sidebar and accent RGB colors plus contrast. Native color pickers and HEX fields allow every
 six-digit RGB color. A shared font choice, 12–18px base text size and translucent-sidebar switch
 apply immediately; Reset appearance restores both palettes and typography without changing the
-theme, language or setup profile. Text size scales the existing typography hierarchy, including
-code, independently of window zoom. System font retains the locale-specific fallback stack.
+theme, language, setup profile or sidebar layout. `ui.appearance.sidebarLayout` (Layout → Sidebar
+layout: `'projects'`, the default project tree, or `'inbox'`) is read by `chat.ts` from the config,
+never browser storage; a save without it or with another value loads as `'projects'` while the
+rest of the appearance is kept, and the state push after a save repaints the sidebar. Text size
+scales the existing typography hierarchy, including code, independently of window zoom. System font retains the locale-specific fallback stack.
 The Appearance sample chat reflects the same semantic color and typography tokens immediately;
 it contains no session data. The composer context dialog and accessible label identify local
 estimates; its toolbar toggles percentage/token values. Compact and Cancel remain the original
@@ -4342,7 +4438,9 @@ passes only a LocalProject UUID and project-relative path through fixed IPC; mai
 approved project/root and Git metadata before reading status or a diff. Git inspection is strictly
 read-only: it strips inherited Git repository/index redirects, uses optional-lock-free bounded
 subprocesses and exposes no stage, commit, reset,
-checkout or push authority. Review projects `M/A/D/R/U`, ancestor-folder markers and
+checkout or push authority. Review projects `M/A/D/R/U`, plus `C` for every unmerged index state
+(`DD/AU/UD/UA/DU/AA/UU`) so an unfinished merge is never shown as an ordinary edit; a conflicted
+file missing from the worktree diffs as empty. It also projects ancestor-folder markers and
 bounded unified diffs; Files may open it from its toolbar. Files and Review are alternate right
 tabs; Review does not add a second file watcher or expose file-write actions.
 Review also identifies the checked-out branch and offers a searchable, read-only comparison
@@ -4859,6 +4957,10 @@ and enforcement while preserving stored preferences. Windows uses the bounded Po
 UIA helper; macOS uses Swift ScreenCaptureKit/AX/CGEvent through an architecture-matched N-API
 addon on an Electron worker. The packaged Electron app is the macOS permission subject; a
 standalone CLI probe does not prove Screen Recording/Accessibility permission for the app.
+
+The permission self-test reports native preflight results, not a completed capture or input.
+An actual screenshot and AX query remain separate evidence; the existing grant-history and
+Repair permissions guidance are preserved.
 
 macOS keeps those grants per code signature, and releases are ad-hoc signed, so after an update
 System Settings still shows a grant that no longer applies. `computer/macos-grants.ts` records

@@ -2248,7 +2248,11 @@ async function deliverDesktopInputs(inputs, background, reusableConversations = 
     if (target) return conversationForTab(tab) === target;
     try {
       const url = new URL(tab.pendingUrl || tab.url || '');
-      return url.searchParams.get('cos-input') === input.id || new URLSearchParams(url.hash.slice(1)).get('cos-input') === input.id;
+      if (url.searchParams.get('cos-input') === input.id || new URLSearchParams(url.hash.slice(1)).get('cos-input') === input.id) return true;
+      // A branch (#482) leaves its marker behind with the source chat: the tab elected for it now
+      // shows the local draft ChatGPT made, which only that same tab can be.
+      return !!input.branch && elections[input.id]?.tab === tab.id && url.origin === 'https://chatgpt.com' &&
+        /^\/c\/local-chatgpt(?::|%3A)/i.test(url.pathname);
     } catch { return false; }
   };
   for (const input of inputs.slice(0, 50)) {
@@ -2257,6 +2261,22 @@ async function deliverDesktopInputs(inputs, background, reusableConversations = 
     const marker = `cos-input=${encodeURIComponent(input.id)}`;
     const candidates = tabs.filter(tab => matchesInput(input, tab));
     let tab = candidates.sort((a, b) => a.id - b.id)[0];
+    // A new chat's first message cancelled before Send: the tab the app opened for it shows only
+    // ChatGPT's start page and stayed open for good (2.1.40 release round). Only that exact, still
+    // owned page closes, and only when it proves nothing was typed or sent there. This entry never
+    // opens, elects or reuses a tab.
+    if (input.close === true && input.opening === true) {
+      if (!tab || target || tab.pinned || tab.pendingUrl || conversationFromUrl(tab.url)) continue;
+      const documentId = tabDocuments[String(tab.id)];
+      const source = { tab: tab.id, documentId, navigationEpoch: tabEpochs[String(tab.id)] };
+      try {
+        const proof = await tabReply(tab.id, { type: 'clf-close-cancelled-opening', id: input.id }, { documentId });
+        const current = await chrome.tabs.get(tab.id);
+        if (proof?.safe === true && ownsDocument(source) && !current.pinned && !current.pendingUrl &&
+            matchesInput(input, current) && !conversationFromUrl(current.url)) await chrome.tabs.remove(tab.id);
+      } catch { /* only the exact, still-owned, untouched opening page closes */ }
+      continue;
+    }
     let elected = elections[input.id];
     let recoveredReuse = null;
     // A fresh app offer can follow a session rebind or the user's actual return.
@@ -2270,6 +2290,9 @@ async function deliverDesktopInputs(inputs, background, reusableConversations = 
       elected = elections[input.id];
     }
     const projectInput = !target && typeof input.project === 'string' && /^g-p-[0-9a-f]{32}$/.test(input.project) ? input.project : null;
+    // Branch in new chat (#482): its first message is sent from ChatGPT's own branch of the source chat.
+    const branchInput = !target && input.branch && /^[0-9a-f-]{36}$/i.test(input.branch.conversationId) &&
+      /^[0-9a-f-]{36}$/i.test(input.branch.messageId) ? input.branch : null;
     // An opening made for another Project (the person retried after the earlier one was gone)
     // is spent on that one; this Project gets its own tab.
     if (projectInput && elected && elected.project !== projectInput) {
@@ -2342,9 +2365,10 @@ async function deliverDesktopInputs(inputs, background, reusableConversations = 
       // borrowing another tab would go through ChatGPT's New chat, which is the root.
       const project = projectInput;
       const url = target ? `https://chatgpt.com/c/${encodeURIComponent(target)}`
+        : branchInput ? `https://chatgpt.com/c/${encodeURIComponent(branchInput.conversationId)}?${marker}#${marker}`
         : project ? `https://chatgpt.com/g/${project}/project?${marker}#${marker}`
         : `https://chatgpt.com/?${input.lifetime === 'temporary-planner' ? 'temporary-chat=true&' : ''}${marker}#${marker}`;
-      if (!target && !project && input.lifetime !== 'temporary-planner') {
+      if (!target && !project && !branchInput && input.lifetime !== 'temporary-planner') {
         const reusable = new Set(reusableConversations);
         const choices = tabs.filter(candidate => !candidate.pinned && !candidate.pendingUrl && modelCatalogTarget?.tab !== candidate.id &&
           (recoveredReuse ? candidate.id === recoveredReuse.tab :
@@ -2414,7 +2438,8 @@ async function deliverDesktopInputs(inputs, background, reusableConversations = 
       ...(!target && typeof input.project === 'string' && /^g-p-[0-9a-f]{32}$/.test(input.project) ? { project: input.project } : {}),
       ...(input.recovery ? { recovery: input.recovery } : {}),
       ...(input.silenceTurnId ? { silenceTurnId: input.silenceTurnId } : {}),
-      ...(input.directTurn ? { directTurn: input.directTurn } : {}), ...(input.lifetime ? { lifetime: input.lifetime } : {}) });
+      ...(input.directTurn ? { directTurn: input.directTurn } : {}), ...(input.lifetime ? { lifetime: input.lifetime } : {}),
+      ...(branchInput ? { branch: { conversationId: branchInput.conversationId, messageId: branchInput.messageId } } : {}) });
   }
 }
 
@@ -3955,7 +3980,10 @@ const HANDLERS = {
       if (message.lifetime === 'temporary-planner' && (owner !== `${prefix}${source.navigationEpoch}` ||
           new URL(tab.url).searchParams.get('temporary-chat') !== 'true')) return { ok: false };
     } else {
-      if (!conversationId && !String(tab.url || '').includes(`cos-input=${id}`)) return { ok: false };
+      // A branch's draft (#482) can lose its marker when ChatGPT rewrites the URL after moving
+      // there; the tab elected for this message still owns it.
+      const branchDraft = () => { try { return inputOpenings[id]?.tab === tab.id && /^\/c\/local-chatgpt(?::|%3A)/i.test(new URL(tab.url).pathname); } catch { return false; } };
+      if (!conversationId && !String(tab.url || '').includes(`cos-input=${id}`) && !branchDraft()) return { ok: false };
       if (message.conversationId !== conversationId || !ownsDocument(source)) return { ok: false };
     }
     if (message.ack === true && message.lifetime !== 'temporary-planner') {

@@ -260,6 +260,12 @@
               </div>
             </section>
             <section class="appearance-section">
+              <header class="settings-section-head"><div><h2>Layout</h2><p>Choose how your chats are arranged in the sidebar.</p></div></header>
+              <div class="settings-surface pane appearance-settings-card">
+              <label class="setting"><span class="setting-text"><b>Sidebar layout</b><em>Projects groups chats by project. Inbox lists them together, active chats first.</em></span><select id="appearanceSidebarLayout"><option value="projects">Projects</option><option value="inbox">Inbox</option></select></label>
+              </div>
+            </section>
+            <section class="appearance-section">
               <header class="settings-section-head"><div><h2>Preferences</h2><p>Language and setup profiles stay independent of appearance.</p></div></header>
               <div class="settings-surface pane appearance-settings-card">
                 <label class="setting" for="uiLanguage"><span class="setting-text"><b>Language</b><em>Changes the app interface immediately. Your messages stay as written.</em></span><select id="uiLanguage" class="language-select" translate="no"><option value="de" lang="de">Deutsch</option><option value="en" lang="en">English</option><option value="es" lang="es">Español</option><option value="fr" lang="fr">Français</option><option value="pt-BR" lang="pt-BR">Português (Brasil)</option><option value="pt-PT" lang="pt-PT">Português (Portugal)</option><option value="ru" lang="ru">Русский</option><option value="tr" lang="tr">Türkçe</option><option value="vi" lang="vi">Tiếng Việt</option><option value="ja" lang="ja">日本語</option><option value="ko" lang="ko">한국어</option><option value="zh-CN" lang="zh-CN">简体中文</option><option value="zh-TW" lang="zh-TW">繁體中文</option></select></label>
@@ -924,6 +930,7 @@
                 <span aria-hidden="true">/</span>
                 <span id="chatProjectName"></span>
               </span>
+              <button id="chatBranchOrigin" class="chat-branch-origin" type="button" hidden></button>
               <span class="mark"><svg class="ico" viewBox="0 0 24 24"><use href="#i-mark" /></svg></span>
               <span class="title">
                 Chat On Steroids
@@ -1327,7 +1334,7 @@
 
               </div>
             </div>
-            <div class="composer-dock" id="composerDock"><div class="composer-dock-body"><div class="background-exec-status" id="backgroundExecStatus" role="status" hidden><i class="ico ph ph-terminal-window" aria-hidden="true"></i><span class="queue-label"></span><span class="background-exec-time"></span><svg class="disclosure-chevron background-exec-chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false" hidden><path d="M6 3.5 10.5 8 6 12.5"></path></svg><button class="background-exec-stop" type="button"><i class="ico ph ph-power" aria-hidden="true"></i><span></span></button></div><div class="sr-only" id="backgroundExecLiveStatus" role="status" aria-live="polite" hidden></div><div class="background-exec-list" id="backgroundExecList" role="list" hidden></div><section class="agent-plan" id="agentPlan" aria-label="Agent task plan" hidden></section><div id="recoveryStatus" role="status" hidden></div><div id="taskPlanPreview" aria-label="Plan stages" hidden></div><div id="finishQueue" aria-label="Queued tasks" hidden></div><div id="activeGoalRow" hidden></div></div></div>
+            <div class="composer-dock" id="composerDock"><div class="composer-dock-body"><div class="background-exec-status" id="backgroundExecStatus" role="status" hidden><i class="ico ph ph-terminal-window" aria-hidden="true"></i><span class="queue-label"></span><span class="background-exec-time"></span><svg class="disclosure-chevron background-exec-chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false" hidden><path d="M6 3.5 10.5 8 6 12.5"></path></svg><button class="background-exec-stop" type="button"><i class="ico ph ph-power" aria-hidden="true"></i><span></span></button></div><div class="sr-only" id="backgroundExecLiveStatus" role="status" aria-live="polite" hidden></div><div class="background-exec-list" id="backgroundExecList" role="list" hidden></div><section class="agent-plan" id="agentPlan" aria-label="Agent task plan" hidden></section><div id="branchDraft" class="branch-draft" role="status" hidden></div><div id="recoveryStatus" role="status" hidden></div><div id="taskPlanPreview" aria-label="Plan stages" hidden></div><div id="finishQueue" aria-label="Queued tasks" hidden></div><div id="activeGoalRow" hidden></div></div></div>
             <form class="composer" id="composer">
               <div id="skillPicker" class="skill-autocomplete" aria-label="Skills" hidden></div>
               <div id="composerSelectedSkills" class="composer-selected-skills" aria-label="Selected skills" hidden></div>
