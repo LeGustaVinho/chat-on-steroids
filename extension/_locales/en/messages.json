@@ -38,6 +38,9 @@
   "content_bootstrap_composer_replaced": {
     "message": "ChatGPT replaced the composer while inserting the bootstrap"
   },
+  "content_bootstrap_composer_never_ready": {
+    "message": "ChatGPT never exposed a usable composer for bootstrap"
+  },
   "content_bootstrap_composer_unavailable": {
     "message": "ChatGPT never re-exposed a usable composer after model selection"
   },
@@ -337,9 +340,6 @@
   },
   "content_delivery_text_not_accepted": {
     "message": "ChatGPT did not accept the text$1"
-  },
-  "content_delivery_rotation_not_stopped": {
-    "message": "ChatGPT offered no Send in the running answer, and stopping it for the automatic continue did not finish."
   },
   "content_delivery_turn_changed": {
     "message": "The turn changed before direct delivery."

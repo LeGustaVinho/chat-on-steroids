@@ -38,6 +38,9 @@
   "content_bootstrap_composer_replaced": {
     "message": "插入引导消息时，ChatGPT 替换了输入框"
   },
+  "content_bootstrap_composer_never_ready": {
+    "message": "ChatGPT 未显示可用于启动的输入框"
+  },
   "content_bootstrap_composer_unavailable": {
     "message": "选择模型后，ChatGPT 未重新显示可用的输入框"
   },
@@ -337,9 +340,6 @@
   },
   "content_delivery_text_not_accepted": {
     "message": "ChatGPT 未接受该文本$1"
-  },
-  "content_delivery_rotation_not_stopped": {
-    "message": "ChatGPT 在进行中的回答里没有提供发送，为自动继续而停止回答也未完成。"
   },
   "content_delivery_turn_changed": {
     "message": "直接发送前回合已发生变化。"

@@ -549,9 +549,11 @@ async function expireQueued(current: InputEntry[]): Promise<InputEntry[]> {
     // browser row past authorization is not preparable, so no path re-offers or
     // replays it. Left in place it still owns its whole session, so every later
     // message waits behind an outcome nobody will ever publish. Retire it visibly
-    // after a bounded wait. Automatic Continue, an opening's first send and a
-    // combined delivery keep their existing custody.
-    if (row.state === 'browser' && row.sendAuthorizedAt !== undefined && !row.recovery && !row.opening &&
+    // after a bounded wait; a late receipt still records the delivery. Automatic
+    // Continue and a combined delivery keep their existing custody. A new chat's
+    // first send is retired the same way: held for hours it was invisible and kept
+    // every automatic extension update waiting (2.1.41 release round).
+    if (row.state === 'browser' && row.sendAuthorizedAt !== undefined && !row.recovery &&
         !row.companionInputId && manualInput(row) && Date.now() - row.sendAuthorizedAt >= UNCERTAIN_SEND_MS)
       return { ...row, state: 'cancelled', error: UNCONFIRMED_SEND };
     if (row.state === 'browser' && row.sendAuthorizedAt !== undefined && Date.now() - row.sendAuthorizedAt >= ABANDONED_SEND_MS)
@@ -826,6 +828,33 @@ export function fileRotationInput(sessionId: string, turnId: string): Promise<In
       conversationId: session.conversationId };
     await commit(append(current, entry));
     return { ...entry };
+  });
+}
+
+/**
+ * Where a fresh-turn continue (#1402) stands, for the tool call held for it (#1662): not yet sent,
+ * being sent (Send is authorized), or settled either way.
+ */
+export async function rotationDelivery(id: string): Promise<'pending' | 'sending' | 'settled'> {
+  const row = (await load()).find(entry => entry.id === id);
+  if (!row || row.purpose !== 'rotation') return 'settled';
+  if (row.state === 'queued' || (row.state === 'browser' && row.sendAuthorizedAt === undefined)) return 'pending';
+  return row.state === 'browser' ? 'sending' : 'settled';
+}
+
+/**
+ * Withdraws a fresh-turn continue that has not been sent, once the call it was held for has to
+ * answer. Sent after that answer it would land in the gap where ChatGPT queues it behind the
+ * reply. Nobody's message, so it leaves no notice; the turn is tried again at a later call.
+ */
+export function withdrawUnsentRotation(id: string): Promise<boolean> {
+  return serial(async () => {
+    const current = await load();
+    const row = current.find(entry => entry.id === id && entry.purpose === 'rotation' &&
+      (entry.state === 'queued' || (entry.state === 'browser' && entry.sendAuthorizedAt === undefined)));
+    if (!row) return false;
+    await commit(current.map(entry => entry === row ? { ...entry, state: 'cancelled' as const } : entry));
+    return true;
   });
 }
 

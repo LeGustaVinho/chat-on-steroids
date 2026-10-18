@@ -38,6 +38,9 @@
   "content_bootstrap_composer_replaced": {
     "message": "ChatGPT a remplacé la zone de saisie pendant l’insertion du message initial"
   },
+  "content_bootstrap_composer_never_ready": {
+    "message": "ChatGPT n'a pas affiché d'éditeur utilisable pour le démarrage"
+  },
   "content_bootstrap_composer_unavailable": {
     "message": "ChatGPT n'a pas réaffiché d'éditeur utilisable après la sélection du modèle"
   },
@@ -337,9 +340,6 @@
   },
   "content_delivery_text_not_accepted": {
     "message": "ChatGPT n’a pas accepté le texte$1"
-  },
-  "content_delivery_rotation_not_stopped": {
-    "message": "ChatGPT n'a proposé aucun Envoyer dans la réponse en cours, et son arrêt pour la reprise automatique n'a pas abouti."
   },
   "content_delivery_turn_changed": {
     "message": "Le tour a changé avant l’envoi direct."
