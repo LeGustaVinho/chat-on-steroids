@@ -9593,6 +9593,16 @@
     );
   }
 
+  /**
+   * An automatic run that stopped before asking keeps its ticket for a later pickup. The app hears
+   * why, so its log and the chat's Compact & Resume row say what it is waiting on instead of
+   * "asking ChatGPT" (#1643: twenty minutes of pickups, each stopped here, none of it logged).
+   */
+  function reportDeferredCompaction(forId, token, why) {
+    if (!token || !why) return;
+    void ask({ type: 'compact', conversationId: forId, token, sourceDeferred: true, sourceError: why }).catch(() => undefined);
+  }
+
   async function startCompact(automatic = false) {
     const forId = conversationId;
     const forEpoch = epoch;
@@ -9746,6 +9756,7 @@
             'The chat changed while preparing the handoff. Nothing was sent.'
           );
         if (!automatic || !hydrationCurrent()) await retireUnsentCompaction(forId, String(filed.data.token || ''), localError, current);
+        else reportDeferredCompaction(forId, String(filed.data.token || ''), localError);
         if (!current()) return;
         renderControl();
         return;
@@ -9776,6 +9787,7 @@
       nativePhase = '';
       localError = barrier;
       if (!automatic) await retireUnsentCompaction(forId, String(filed.data.token || ''), barrier, current);
+      else reportDeferredCompaction(forId, String(filed.data.token || ''), barrier);
       if (!current()) return;
       renderControl();
       void pullActivity();
