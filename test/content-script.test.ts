@@ -760,6 +760,30 @@ describe('desktop input delivery and helper ownership', () => {
     expect(sends()).toBe(1);
     expect(live.sent.filter(message => message.ack)).toHaveLength(1);
   });
+  // 2026-10-20, Loop chats on the VM: when ChatGPT shows only Stop at the tool result, it offers no
+  // Send for the continue. The page declines at once, in the app's words, so the call held for it
+  // answers now instead of waiting out the hold, and a later tool result tries again.
+  it('declines an automatic continue at once when ChatGPT offers only Stop', async () => {
+    const { ROTATION_DECLINED } = await import('../src/main/session/input.js');
+    let directTurn: { id: string; startedAt: number };
+    live = await nonProHarness(`https://chatgpt.com/c/${chatA}`, {
+      desktop_input: message => {
+        if (message.authorize || message.ack || message.fail) return { ok: true, data: { ok: true } };
+        return { ok: true, data: { input: claimed({ directTurn, purpose: 'rotation' }) } };
+      }
+    });
+    startGenerating(live.document);
+    live.hook.observe(); await live.hook.flush();
+    const start = emitted(live.sent, 'turn_start').at(-1)!;
+    directTurn = { id: start.event.turnId as string, startedAt: start.event.time as number };
+    // Only Stop: no Send appears for the continue.
+    live.document.querySelector('[data-testid="send-button"]')?.remove();
+    expect(await live.runtimeMessage({ type: 'clf-desktop-input', id: inputId, conversationId: chatA, directTurn })).toEqual({ ok: false });
+    expect(live.sent.filter(message => message.ack || message.authorize)).toHaveLength(0);
+    expect(live.sent.filter(message => message.fail)).toContainEqual(expect.objectContaining({ error: ROTATION_DECLINED, detail: 'no-send' }));
+    // Its own text does not stay behind in ChatGPT's box.
+    expect(live.document.querySelector('#prompt-textarea')!.textContent!.trim()).toBe('');
+  });
   it('clears its own automatic continue when the Send it clicked did not take it', async () => {
     // 2.1.40 release round, Windows: a rotation fired right after a tool result while the model
     // was already finishing. Its Send click delivered nothing, the receipt could not be confirmed,
@@ -18203,6 +18227,28 @@ describe('the context meter and automatic compaction', () => {
     expect(sends()).toBe(compacts ? 1 : 0);
     if (!compacts) expect(live.sent.filter((message) => message.type === 'compact' && message.sourceDeferred === true))
       .toEqual([expect.objectContaining({ sourceError: expect.stringContaining('has not confirmed receiving') })]);
+  });
+
+  it('checks less often once a receipt wait has run for a while', async () => {
+    // The release build's slow Intel runner timed the 6-minute wait out: 1,440 checks at 250 ms,
+    // each reading the page. On a real page that is minutes of needless work on the slowest machines.
+    let checks = 0;
+    live = await harness(undefined, {
+      activity: () => { checks++; return withContext(205_000, settings({ auto: true }), { pendingTools: 0, sentResults: { count: 0, settled: true } }); },
+      compact: () => ({ ok: true, data: { token: 'paced-token', prompt: 'Write the brief.', ...automaticTicket('not-attempted') } })
+    });
+    startGenerating(live.document);
+    const section = assistantTurn(live.document, 'paced-source', []);
+    compactionFiber(section, () => [compactionCall(false)], () => []);
+    const sends = watchSend(live.document);
+    checks = 0;
+    await live.hook.startCompact(true);
+    expect(sends()).toBe(0);
+    expect(live.sent.filter((message) => message.type === 'compact' && message.sourceDeferred === true))
+      .toEqual([expect.objectContaining({ sourceError: expect.stringContaining('has not confirmed receiving') })]);
+    // Quick at first (a receipt usually lands within seconds), then every 2 s: about 215 checks.
+    expect(checks).toBeGreaterThan(100);
+    expect(checks).toBeLessThan(300);
   });
 
   it.each([[120_000, true], [8 * 60_000, false]])('lets a local poll of %i ms finish before stopping an automatic source (compacts: %s)', async (pollMs, compacts) => {
