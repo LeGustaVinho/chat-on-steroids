@@ -1117,6 +1117,15 @@ the same actions as a turn's answer (`messageAnswerAnchors`); `sessions:exportMa
 by `messageId` instead of `turnId`, and refuses a turn's own answer named that way. `scope: 'latest'` names
 no answer: main picks the newest one that offers these actions (`latestAnswer`), a completed turn's or a turnless one.
 
+
+Bookmarked answers (#1719): `sessions:bookmarks { id }` → `SessionBookmark[]` (oldest answer first)
+and `sessions:bookmark { id, messageId, excerpt, messageTime, on }` → the chat's new list, in
+`src/main/session/bookmarks.ts`, kept in `bookmarks.json` in the session's folder and written serially per
+session; at most `MAX_BOOKMARKS` (200) per chat, excerpts one line of at most 160 characters. A
+missing or damaged file reads as no bookmarks; damaged entries are dropped. Nothing is sent to
+ChatGPT. The header list jumps through `sessions:locate-message`; a reply no longer in the chat
+shows a notice instead of scrolling. Long row menus scroll inside the window (`row-menu.ts`). A file holding more than the limit keeps the ones bookmarked first. Tests: `test/session-bookmarks.test.ts` (storage, limit, damaged files), the "bookmarked answers" cases in `test/renderer-timeline.test.ts` (answer action, header list, jump), and `scripts/verify-bookmark-list.cjs` (200 bookmarks in a short window, real Electron).
+
 Edit & resubmit (#365): ChatGPT keeps an edited question as a new version beside the old one, under
 the same parent, and continues from the new one. The page reports each question's place in that tree
 (`user_message.parentId`: the legacy `metadata.parent_id`, or on the shell the previous turn's last
@@ -3966,6 +3975,13 @@ explanation in app and browser. Missing MCP evidence explains that the previous 
 local tool call, so lost tool connectivity cannot be established; Loop remains enabled. Do not
 claim login is missing or the tunnel is off without evidence. Distinguish input size, helper output
 size, provider failures and uncertain delivery. Browser error text wraps instead of truncating.
+
+The `Review Goal completion` setting is off by default. When enabled, a Goal helper reporting
+completion without proof is shown as unverified. For an ordinary Goal reply, keep the reply
+pending without retrying. At Session finish, keep the existing hold active, ask the model to keep
+the turn open, and try to show one notice; record the event as `helper_stop_unverified`.
+Missing/false keeps the prior behavior, and Loop's refusal handling is unchanged. The optional
+progress `reason` labels this event; it does not prove the Goal is complete.
 
 Provider progress updates one existing timeline row and is never sendable text. Validate the
 final bounded decision schema before publication. Goal may return stop/no reply. Loop requires
