@@ -2620,6 +2620,9 @@ describe('automatic compaction', () => {
 
     expect(seen, 'the repair was still being offered after forty reads').toBeLessThan(40);
     expect(await offered(), 'it came back after being retired').toBe(false);
+    // #1787: the chat's own caption says so too, rather than counting on as if work went on.
+    const stoppedSession = (await findSessionByConversation(conversationId))!;
+    expect((await sessionControlsFor(stoppedSession.id)).pageless, 'the chat window was not told recovery stopped').toBe(true);
 
     // The ceiling above bounds one repair, not the supply of them: the chat goes quiet, the sweep
     // reads silence, and a fresh repair used to arrive with its own budget. Measured on 2026-09-21
@@ -2641,6 +2644,7 @@ describe('automatic compaction', () => {
     ] } });
     await settled();
     expect(await offered(), 'a page that came back was still refused recovery').toBe(true);
+    expect((await sessionControlsFor(stoppedSession.id)).pageless, 'a page that came back still read as stopped').toBe(false);
 
     const session = (await findSessionByConversation(conversationId))!;
     const notes = (await readEvents(session.id, { kinds: ['note'] }))
@@ -5019,6 +5023,42 @@ describe('delivering a bootstrap', () => {
       expect(command.text).toContain('PROJECT_TASK_PRESERVED');
     }
     expect(command.text).not.toContain('SCOPED_AGENTS_TAIL');
+  });
+
+  it('puts a chat recorded inside a linked ChatGPT Project into its project before it runs commands (#1744)', async () => {
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const { addProject, armProjectCreate, claimProjectCreate, completeProjectCreate, getSessionProject } = await import('../src/main/projects.js');
+    const { getSession } = await import('../src/main/session/store.js');
+    const first = path.join(dir, 'first-root-1744');
+    const folder = path.join(dir, 'linked-project-1744');
+    await fs.mkdir(first, { recursive: true });
+    await fs.mkdir(folder, { recursive: true });
+    // Without the project, a command would run in the first approved folder.
+    await saveConfig({ ...suiteConfig, roots: [{ name: 'first', path: first }, { name: 'linked', path: folder }] });
+    const project = await addProject(folder);
+    const requestId = (project.chatgpt as { requestId: string }).requestId;
+    const chatgptProject = `g-p-${'c'.repeat(32)}`;
+    expect(await claimProjectCreate(requestId, 'page')).toBe(true);
+    expect(await armProjectCreate(requestId, 'page')).toBe(true);
+    expect(await completeProjectCreate(requestId, 'page', chatgptProject)).toBe(true);
+    await pair();
+    const record = (conversationId: string, extra: Record<string, unknown>) => request('POST', '/events', {
+      body: { conversationId, ...extra, events: [{ kind: 'user_message', time: Date.now(), text: 'list the files', messageId: `m-${conversationId}` }] }
+    });
+    const inside = await record('17440000-0000-4000-8000-000000000001', { chatgptProject });
+    expect(inside.body).toMatchObject({ stored: 1 });
+    expect((await getSession(inside.body.sessionId as string))?.projectId).toBe(project.id);
+    expect(await getSessionProject(inside.body.sessionId as string)).toMatchObject({ virtual: '/linked' });
+    // Outside any Project, or with a malformed value, a chat stays as it was.
+    const outside = await record('17440000-0000-4000-8000-000000000002', {});
+    expect((await getSession(outside.body.sessionId as string))?.projectId).toBeUndefined();
+    const odd = await record('17440000-0000-4000-8000-000000000003', { chatgptProject: 'g-p-../../x' });
+    expect(odd.status).toBe(200);
+    expect((await getSession(odd.body.sessionId as string))?.projectId).toBeUndefined();
+    // A worker's events (its origin may not be recorded yet) never pick a project this way.
+    const worker = await record('17440000-0000-4000-8000-000000000004', { chatgptProject, agent: 'worker-1' });
+    expect((await getSession(worker.body.sessionId as string))?.projectId).toBeUndefined();
   });
 
   it('redeems a restored broker-owned worktree as the worker cwd, preserves source instructions and rejects a lost lease', async () => {

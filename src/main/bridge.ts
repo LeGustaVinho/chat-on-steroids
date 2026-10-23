@@ -16,6 +16,7 @@ import { CONVERSATION_DELETED } from '../shared/chat-error.js';
 import { prepareSessionPrompt } from './session/prompt.js';
 import { NEW_CHAT, noteAutomaticReply } from './session/automatic-replies.js';
 import { pendingChatModelRequest, observeChatModels, requestChatModels } from './chat-models.js';
+import { resumeModelSelection } from './resume-model.js';
 import { isDeliberateEffort, isProModel } from '../shared/chat-models.js';
 import { supportsFinishAutomation } from '../shared/finish.js';
 import { injectedUserMessage, recordedRequestTurn, responseTurnId, type TimelineTurns } from '../shared/chronology.js';
@@ -26,8 +27,8 @@ import { publishBrowserDecision, authorizeBrowserInput, sessionInputPolicy, coll
 import { callHoldOpen, holdCalls } from './rotation-hold.js';
 import { authorizedPluginRefreshPublications, hasRequestedPluginRefresh, pendingPluginRefreshes, claimPluginRefresh, requireManualPluginRefresh, completePluginRefresh, failPluginRefresh } from './plugin-refresh.js';
 import { attachBrowserWake, wakeBrowserWork } from './browser-wake.js';
-import { tunnelRouteSettling } from './tunnel/route-settle.js';
-import { armProjectCreate, claimProjectCreate, completeProjectCreate, failProjectCreate, getProject, markProjectGone, pendingProjectCreates } from './projects.js';
+import { noteRouteExistingChatSend, tunnelRouteSettling } from './tunnel/route-settle.js';
+import { armProjectCreate, bindChatToLinkedProject, claimProjectCreate, completeProjectCreate, failProjectCreate, getProject, markProjectGone, pendingProjectCreates } from './projects.js';
 import { wakeBrowserUrl } from './browser-startup.js';
 let browserWake: ReturnType<typeof attachBrowserWake> | null = null;
 import { browserWindowBounds, currentBrowserWorkArea } from './browser-window-layout.js';
@@ -2033,6 +2034,11 @@ export type SessionControlsView = {
   finishGoalDraft?: Pick<import('./goal.js').GoalDraftView, 'stage' | 'model' | 'text' | 'error'> | null;
   blocked: 'worker' | 'blocked' | '';
   job: ResumeJobView | null;
+  /**
+   * No page picked up this chat's repairs, so recovery gave up (#1787); in memory, lifted when the page
+   * polls again. Not the session list's durable `recoveryStopped`.
+   */
+  pageless?: boolean;
 };
 
 /** Renderer authority is a durable session, never a caller-supplied browser identity. */
@@ -2080,7 +2086,7 @@ export async function sessionControlsFor(sessionId: string): Promise<SessionCont
     proLoopDelivery: control.enabled && getConfig().ui.finishTool === true && session.selectedModel?.conversationId === id &&
       supportsFinishAutomation(control.mode, session.selectedModel.model, session.selectedModel.reasoningEffort),
     automation: goalArmedFor(id) && !blocked ? control.enabled ? control.mode : 'goal' : 'off',
-    blocked, job: resumeJobFor(sessionId) };
+    blocked, job: resumeJobFor(sessionId), pageless: pagelessChats.has(id) };
 }
 /** One absolute budget includes opening an absent tab and native hydration. */
 export const STOP_COMMAND_TIMEOUT_MS = 120_000;
@@ -2876,7 +2882,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     }
     if (route === '/input/fail') {
       const ok = await failBrowserInput(body.id, body.owner, typeof body.error === 'string' ? body.error : 'Unable to prepare ChatGPT',
-        typeof body.detail === 'string' && /^[a-z-]{1,40}$/.test(body.detail) ? body.detail : undefined);
+        // The page's own short reason code, as the extension forwards it (see RELEASE_DETAIL there).
+        typeof body.detail === 'string' && /^[a-z][a-z0-9 _-]{0,79}$/.test(body.detail) ? body.detail : undefined);
       // A rejected picker choice invalidates cached availability. Reobserve existing
       // browser documents through the catalog owner; failure grants no new-tab authority.
       if (ok && body.error === 'Requested model or reasoning could not be confirmed') requestChatModels(false);
@@ -2956,6 +2963,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       if (link && (link.state !== 'linked' || body.project !== link.id)) return json(res, 200, { input: null }, origin);
     }
     const input = await claimBrowserInput(body.id, body.owner, target, body.requiresAuthorization === true);
+    // The first message for an existing chat after a new tunnel-client is what the hold learns from.
+    if (input && target) noteRouteExistingChatSend(target);
     return json(res, 200, { input }, origin);
   }
 
@@ -3214,6 +3223,15 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     // silence ticket was already filed. Publish its receipt-anchored listening
     // deadline into that same outbox row before acknowledging the observation.
     if (activeUntil.get(id)?.thinkingFailed) await fileSilenceInputTicket(id, Date.now());
+    // #1744: the tab showed this chat inside a ChatGPT Project. When that Project is a CoS
+    // project's own, the chat joins it, so its commands run in that folder (projects.ts decides).
+    const chatgptProject = typeof body['chatgptProject'] === 'string' ? body['chatgptProject'] : null;
+    const recordedSession = committed?.sessionId;
+    // A worker's first events can land before its origin is recorded; workers follow their prime.
+    if (chatgptProject && recordedSession && (!reportedAgent || reportedAgent === PRIME_ID)) {
+      await bindChatToLinkedProject(recordedSession, chatgptProject).catch(error =>
+        logWarn(`projects: chat ${recordedSession} stays outside the project linked to ${chatgptProject}: ${error instanceof Error ? error.message : String(error)}`));
+    }
     if (committed?.wake) wakeBrowserWork();
     return json(res, 200, { sessionId: committed!.sessionId, stored: committed!.stored }, origin);
   }
@@ -6962,7 +6980,8 @@ function pendingBrowserPlacement(conversationId: string | null, browser: string 
   command.progress = { ...command.progress, opened: 'browser' };
   const spec = command.spec;
   const worker = spec.type === 'worker';
-  const selection = spec.type === 'resume' ? continuationByToken(spec.token)?.requestedModel : null;
+  // Only what this ChatGPT account offers: a Free plan has no picker to confirm a model with (#1766).
+  const selection = spec.type === 'resume' ? resumeModelSelection(continuationByToken(spec.token)?.requestedModel, spec.token) : null;
   return {
     id: command.id, model: worker ? spec.model : selection?.model ?? null,
     reasoningEffort: worker ? spec.reasoningEffort : selection?.reasoningEffort ?? null,
@@ -10913,7 +10932,8 @@ function revivalFor(agent: string, runId: string): WorkerRevival | null {
  */
 function describe(command: Command, client: string | null, claimedSummary?: string): BridgeCommand {
   const spec = command.spec;
-  const selection = spec.type === 'resume' ? continuationByToken(spec.token)?.requestedModel : null;
+  // Only what this ChatGPT account offers: a Free plan has no picker to confirm a model with (#1766).
+  const selection = spec.type === 'resume' ? resumeModelSelection(continuationByToken(spec.token)?.requestedModel, spec.token) : null;
   const expiresAt = Date.now() + Math.max(1, commandDeadlineDelay(command));
   if (spec.type === 'stop') return { id: command.id, expiresAt, kind: 'stop-turn', type: 'stop', text: '', agent: null, model: null, reasoningEffort: null, conversationId: spec.conversationId, turnId: spec.turnId, ...(spec.userMessageId ? { userMessageId: spec.userMessageId } : {}) };
   // A resume's claim is persisted by /commands/redeem before this renderer is called. A
