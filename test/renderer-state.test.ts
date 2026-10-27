@@ -1217,6 +1217,23 @@ it('never settles a chat waiting on approval, a stopped recovery or a block, nor
     expect(row.title, id).toMatch(new RegExp(`^${id} · Failed · `));
   }
   expect(doc.querySelector('.inbox-settled > .sess[data-id="plain"] .sess-state')).toBeNull();
+  // One tooltip at a time (#1862): while the app's own shows, the row hands it its title, so the browser
+  // shows no second one; the title comes back when the pointer leaves.
+  const plain = doc.querySelector<HTMLElement>('.inbox-settled > .sess[data-id="plain"]')!;
+  const said = plain.title;
+  plain.dispatchEvent(new mounted.window.Event('pointerenter'));
+  expect(plain.hasAttribute('title')).toBe(false);
+  expect(doc.getElementById('sessionTooltip')!.textContent).toBe(said);
+  plain.dispatchEvent(new mounted.window.Event('pointerleave'));
+  expect(plain.title).toBe(said);
+  expect(doc.getElementById('sessionTooltip')).toBeNull();
+  // Opening the row's menu puts the tooltip away and gives the row its title back at once.
+  plain.dispatchEvent(new mounted.window.Event('pointerenter'));
+  plain.dispatchEvent(new mounted.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  expect(doc.getElementById('sessionTooltip')).toBeNull();
+  expect(plain.title).toBe(said);
+  doc.dispatchEvent(new mounted.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  plain.dispatchEvent(new mounted.window.Event('pointerleave'));
   // The parent's line counts the worker that needs the person.
   expect(inboxCardState(doc, 'parent-approval').card.querySelector('.sess-workers')?.textContent).toBe('1 needs attention');
   expect(inboxCardState(doc, 'parent-recovery').card.querySelector('.sess-workers')?.textContent).toBe('1 needs attention');
@@ -2351,6 +2368,26 @@ it('saves Auto-select Skills from Settings and restores it on state push', async
   expect(mounted.calls[0].ui.autoSelectSkills).toBe(true);
   mounted.push({ ...mounted.state, config: { ...mounted.state.config, ui: { ...mounted.state.config.ui, autoSelectSkills: false } } });
   expect(toggle.checked).toBe(false);
+});
+
+it('saves and restores the Code checkpoints switch on the Workspace page, and finds it in Settings search', async () => {
+  const mounted = await mountChat();
+  const w = mounted.window;
+  const doc = w.document;
+  const toggle = doc.getElementById('codeCheckpoints') as HTMLInputElement;
+  expect(doc.querySelector('[data-panel="home"]')!.contains(toggle)).toBe(true);
+  expect(toggle.checked).toBe(false);
+  toggle.checked = true;
+  toggle.dispatchEvent(new w.Event('change', { bubbles: true }));
+  await vi.waitFor(() => expect(mounted.calls).toHaveLength(1), { timeout: 5_000 });
+  expect(mounted.calls[0].projects).toEqual({ codeCheckpoints: true });
+  mounted.push({ ...mounted.state, config: { ...mounted.state.config, projects: { codeCheckpoints: false } } });
+  expect(toggle.checked).toBe(false);
+
+  const { collectSettings, searchSettings } = await import('../src/renderer/settings-search.js');
+  const found = searchSettings(collectSettings(doc), 'checkpoint');
+  expect(found.map(entry => entry.title)).toContain("Save a checkpoint before each turn's first edit");
+  expect(found.find(entry => entry.target.contains(toggle))?.tab).toBe('home');
 });
 
 it('saves and restores the global worker admission cap from Settings', async () => {
